@@ -1,0 +1,178 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid()) @map("_id")
+  email         String    @unique
+  firstName     String
+  lastName      String
+  password      String
+  phone         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  emailVerified DateTime?
+  image         String?
+
+  // Vehicle information
+  vehicleType   String?   // "electric", "hybrid", "plugin-hybrid"
+  vehicleModel  String?
+  
+  // Push notifications
+  pushSubscription Json?  // Web Push API subscription object
+  
+  // Relationships
+  ridesAsDriver      Ride[]    @relation("Driver")
+  ridesAsPassenger   RidePassenger[]
+  achievements       UserAchievement[]
+  ratings           Rating[]   @relation("RatingReceiver")
+  givenRatings      Rating[]   @relation("RatingGiver")
+  totalCO2Saved     Float     @default(0)
+  ecoPoints         Int       @default(0)
+}
+
+model Ride {
+  id          String   @id @default(cuid()) @map("_id")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Route information
+  fromCity    String
+  toCity      String
+  fromLocation Json    // { lat: number, lng: number, address: string }
+  toLocation   Json    // { lat: number, lng: number, address: string }
+  distance    Float    // in kilometers
+  duration    Int      // in minutes
+  
+  // Schedule
+  departureTime DateTime
+  returnTrip    Boolean  @default(false)
+  returnTime    DateTime?
+  
+  // Ride details
+  availableSeats Int
+  price         Float
+  description   String?
+  amenities     String[] // ["wifi", "ac", "music", etc.]
+  status        RideStatus @default(SCHEDULED)
+  
+  // CO2 and environmental impact
+  co2Saved     Float    // in kg
+  
+  // Real-time tracking
+  currentLocation Json?  // { lat: number, lng: number, timestamp: DateTime }
+  
+  // Relationships
+  driverId     String
+  driver       User     @relation("Driver", fields: [driverId], references: [id])
+  passengers   RidePassenger[]
+  ratings      Rating[]
+  
+  // Pickup points
+  pickupPoints PickupPoint[]
+
+  @@index([fromCity, toCity])
+  @@index([departureTime])
+}
+
+model RidePassenger {
+  id        String   @id @default(cuid()) @map("_id")
+  rideId    String
+  userId    String
+  status    PassengerStatus @default(PENDING)
+  joinedAt  DateTime @default(now())
+  
+  // Pickup point selection
+  pickupPointId String?
+  pickupPoint   PickupPoint? @relation(fields: [pickupPointId], references: [id])
+  
+  ride      Ride     @relation(fields: [rideId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+
+  @@unique([rideId, userId])
+}
+
+model PickupPoint {
+  id        String   @id @default(cuid()) @map("_id")
+  rideId    String
+  location  Json     // { lat: number, lng: number, address: string }
+  name      String   // e.g., "Downtown Station", "Mall Parking"
+  order     Int      // Order in the route
+  
+  ride      Ride     @relation(fields: [rideId], references: [id])
+  passengers RidePassenger[]
+}
+
+model Rating {
+  id          String   @id @default(cuid()) @map("_id")
+  createdAt   DateTime @default(now())
+  rideId      String
+  fromUserId  String
+  toUserId    String
+  rating      Int      // 1-5 stars
+  comment     String?
+  
+  ride        Ride     @relation(fields: [rideId], references: [id])
+  fromUser    User     @relation("RatingGiver", fields: [fromUserId], references: [id])
+  toUser      User     @relation("RatingReceiver", fields: [toUserId], references: [id])
+
+  @@unique([rideId, fromUserId, toUserId])
+}
+
+model Achievement {
+  id          String   @id @default(cuid()) @map("_id")
+  title       String
+  description String
+  type        AchievementType
+  threshold   Int      // e.g., number of rides, CO2 saved
+  imageUrl    String?
+  
+  // Relationships
+  userAchievements UserAchievement[]
+}
+
+model UserAchievement {
+  id            String   @id @default(cuid()) @map("_id")
+  userId        String
+  achievementId String
+  unlockedAt    DateTime @default(now())
+  progress      Int      @default(0)
+  
+  user        User        @relation(fields: [userId], references: [id])
+  achievement Achievement @relation(fields: [achievementId], references: [id])
+
+  @@unique([userId, achievementId])
+}
+
+enum RideStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+enum PassengerStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  CANCELLED
+}
+
+enum AchievementType {
+  RIDES_COMPLETED
+  CO2_SAVED
+  DISTANCE_TRAVELED
+  POSITIVE_RATINGS
+  ECO_POINTS
+}
